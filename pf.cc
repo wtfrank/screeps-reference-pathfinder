@@ -17,6 +17,7 @@ constexpr bool is_near_border_pos(T val) {
 }
 
 	decltype(path_finder_t::terrain) path_finder_t::terrain = {{ nullptr }};
+uint8_t room_info_t::cost_matrix0[21000] = {0};
 
 	// Return room index from a map position, allocates a new room index if needed and possible
 	room_index_t path_finder_t::room_index_from_pos(const map_position_t map_pos) {
@@ -445,6 +446,16 @@ constexpr bool is_near_border_pos(T val) {
 		// Clean up from previous iteration
 		for (size_t ii = 0; ii < room_table_size; ++ii) {
 			reverse_room_table[room_table[ii].pos.id] = 0;
+			if (room_table[ii].cost_matrix != nullptr) {
+				// Only free user-allocated cost matrices (not the static fallback)
+				// Use free() since room_callback typically uses malloc, not new[]
+				uint8_t* user_matrix = *static_cast<uint8_t(*)[100]>(room_table[ii].cost_matrix);
+				if (user_matrix != room_info_t::cost_matrix0) {
+					free(user_matrix);
+				}
+				room_table[ii].cost_matrix = nullptr;
+			}
+			room_table[ii].terrain = nullptr;
 		}
 		room_table_size = 0;
 		blocked_rooms.clear();
