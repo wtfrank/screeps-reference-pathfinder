@@ -8,12 +8,12 @@ using namespace screeps;
 
 template <typename T>
 constexpr bool is_border_pos(T val) {
-	return (val + 1) % 50 < 2;
+	return (val + 1) % 100 < 2;
 }
 
 template <typename T>
 constexpr bool is_near_border_pos(T val) {
-	return (val + 2) % 50 < 4;
+	return (val + 2) % 100 < 4;
 }
 
 	decltype(path_finder_t::terrain) path_finder_t::terrain = {{ nullptr }};
@@ -48,14 +48,14 @@ constexpr bool is_near_border_pos(T val) {
 		if (room_index == 0) {
 			throw std::runtime_error("Invalid invocation of index_from_pos");
 		}
-		return pos_index_t(room_index - 1) * 50 * 50 + pos.xx % 50 * 50 + pos.yy % 50;
+		return pos_index_t(room_index - 1) * 100 * 100 + pos.xx % 100 * 100 + pos.yy % 100;
 	}
 
 	world_position_t path_finder_t::pos_from_index(pos_index_t index) const {
-		room_index_t room_index = index / (50 * 50);
+		room_index_t room_index = index / (100 * 100);
 		const room_info_t& terrain = room_table[room_index];
-		unsigned int coord = index - room_index * 50 * 50;
-		return world_position_t(coord / 50 + terrain.pos.xx * 50, coord % 50 + terrain.pos.yy * 50);
+		unsigned int coord = index - room_index * 100 * 100;
+		return world_position_t(coord / 100 + terrain.pos.xx * 100, coord % 100 + terrain.pos.yy * 100);
 	}
 
 	// Push a new node to the heap, or update its cost if it already exists
@@ -87,7 +87,7 @@ constexpr bool is_near_border_pos(T val) {
 		}
 		const room_info_t& terrain = room_table[room_index - 1];
 		if (terrain.cost_matrix != nullptr) {
-			int tmp = terrain.cost_matrix[pos.xx % 50][pos.yy % 50];
+			int tmp = terrain.cost_matrix[pos.xx % 100][pos.yy % 100];
 			if (tmp != 0) {
 				if (tmp == 0xff) {
 					return obstacle;
@@ -96,7 +96,7 @@ constexpr bool is_near_border_pos(T val) {
 				}
 			}
 		}
-		return look_table[terrain.look(pos.xx % 50, pos.yy % 50)];
+		return look_table[terrain.look(pos.xx % 100, pos.yy % 100)];
 	}
 
 	// Returns the minimum Chebyshev distance to a goal
@@ -130,26 +130,26 @@ constexpr bool is_near_border_pos(T val) {
 			world_position_t neighbor = pos.position_in_direction(static_cast<world_position_t::direction_t>(dir));
 
 			// If this is a portal node there are some moves which will be impossible, and should be discarded
-			if (pos.xx % 50 == 0) {
-				if (neighbor.xx % 50 == 49 && pos.yy != neighbor.yy) {
+			if (pos.xx % 100 == 0) {
+				if (neighbor.xx % 100 == 99 && pos.yy != neighbor.yy) {
 					continue;
 				} else if (pos.xx == neighbor.xx) {
 					continue;
 				}
-			} else if (pos.xx % 50 == 49) {
-				if (neighbor.xx % 50 == 0 && pos.yy != neighbor.yy) {
+			} else if (pos.xx % 100 == 99) {
+				if (neighbor.xx % 100 == 0 && pos.yy != neighbor.yy) {
 					continue;
 				} else if (pos.xx == neighbor.xx) {
 					continue;
 				}
-			} else if (pos.yy % 50 == 0) {
-				if (neighbor.yy % 50 == 49 && pos.xx != neighbor.xx) {
+			} else if (pos.yy % 100 == 0) {
+				if (neighbor.yy % 100 == 99 && pos.xx != neighbor.xx) {
 					continue;
 				} else if (pos.yy == neighbor.yy) {
 					continue;
 				}
-			} else if (pos.yy % 50 == 49) {
-				if (neighbor.yy % 50 == 0 && pos.xx != neighbor.xx) {
+			} else if (pos.yy % 100 == 99) {
+				if (neighbor.yy % 100 == 0 && pos.xx != neighbor.xx) {
 					continue;
 				} else if (pos.yy == neighbor.yy) {
 					continue;
@@ -285,7 +285,7 @@ constexpr bool is_near_border_pos(T val) {
 		// First check to see if we're jumping to/from a border, options are limited in this case
 		world_position_t neighbors[3];
 		int neighbor_count = 0;
-		if (pos.xx % 50 == 0) {
+		if (pos.xx % 100 == 0) {
 			if (dx == -1) {
 				neighbors[0] = world_position_t(pos.xx - 1, pos.yy);
 				neighbor_count = 1;
@@ -295,7 +295,7 @@ constexpr bool is_near_border_pos(T val) {
 				neighbors[2] = world_position_t(pos.xx + 1, pos.yy + 1);
 				neighbor_count = 3;
 			}
-		} else if (pos.xx % 50 == 49) {
+		} else if (pos.xx % 100 == 99) {
 			if (dx == 1) {
 				neighbors[0] = world_position_t(pos.xx + 1, pos.yy);
 				neighbor_count = 1;
@@ -305,7 +305,7 @@ constexpr bool is_near_border_pos(T val) {
 				neighbors[2] = world_position_t(pos.xx - 1, pos.yy + 1);
 				neighbor_count = 3;
 			}
-		} else if (pos.yy % 50 == 0) {
+		} else if (pos.yy % 100 == 0) {
 			if (dy == -1) {
 				neighbors[0] = world_position_t(pos.xx, pos.yy - 1);
 				neighbor_count = 1;
@@ -315,7 +315,7 @@ constexpr bool is_near_border_pos(T val) {
 				neighbors[2] = world_position_t(pos.xx + 1, pos.yy + 1);
 				neighbor_count = 3;
 			}
-		} else if (pos.yy % 50 == 49) {
+		} else if (pos.yy % 100 == 99) {
 			if (dy == 1) {
 				neighbors[0] = world_position_t(pos.xx, pos.yy + 1);
 				neighbor_count = 1;
@@ -343,15 +343,15 @@ constexpr bool is_near_border_pos(T val) {
 
 		// First check to see if we're close to borders
 		int border_dx = 0;
-		if (pos.xx % 50 == 1) {
+		if (pos.xx % 100 == 1) {
 			border_dx = -1;
-		} else if (pos.xx % 50 == 48) {
+		} else if (pos.xx % 100 == 98) {
 			border_dx = 1;
 		}
 		int border_dy = 0;
-		if (pos.yy % 50 == 1) {
+		if (pos.yy % 100 == 1) {
 			border_dy = -1;
-		} else if (pos.yy % 50 == 48) {
+		} else if (pos.yy % 100 == 98) {
 			border_dy = 1;
 		}
 

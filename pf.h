@@ -11,11 +11,11 @@
 
 namespace screeps {
 	typedef uint32_t cost_t; // maximum: longest chebyshev distance of whole map
-	typedef uint32_t pos_index_t; // maximum: k_max_rooms * 2500
+	typedef uint32_t pos_index_t; // maximum: k_max_rooms * 21000
 	typedef uint32_t room_index_t; // maximum: k_max_rooms (32 bits tested faster than uint8_t)
 	constexpr size_t k_max_rooms = 64;
 
-	static_assert(std::numeric_limits<pos_index_t>::max() > 2500 * k_max_rooms, "pos_index_t is too small");
+	static_assert(std::numeric_limits<pos_index_t>::max() > 21000 * k_max_rooms, "pos_index_t is too small");
 
 	//
 	// Stores coordinates of a room on the global world map.
@@ -60,7 +60,7 @@ namespace screeps {
 			union {
 				uint64_t id;
 				struct {
-					uint32_t xx, yy; // maximum: world_size[255] * 50 (32 bits tested faster than uint16_t)
+					uint32_t xx, yy; // maximum: world_size[255] * 100 (32 bits tested faster than uint16_t)
 				};
 			};
 
@@ -77,8 +77,8 @@ namespace screeps {
 			}
 
 			friend std::ostream& operator<< (std::ostream& os, const world_position_t& that) {
-				int xx = that.xx / 50;
-				int yy = that.yy / 50;
+				int xx = that.xx / 100;
+				int yy = that.yy / 100;
 				bool w = xx <= 127;
 				bool n = yy <= 127;
 				os <<"world_position_t(["
@@ -86,7 +86,7 @@ namespace screeps {
 					<<(w ? 127 - xx : xx - 128)
 					<<(n ? 'N' : 'S')
 					<<(n ? 127 - yy : yy - 128)
-					<<"] " <<that.xx % 50 <<", " <<that.yy % 50 <<")";
+					<<"] " <<that.xx % 100 <<", " <<that.yy % 100 <<")";
 				return os;
 			}
 
@@ -157,7 +157,7 @@ namespace screeps {
 			}
 
 			map_position_t map_position() const {
-				return map_position_t(xx / 50, yy / 50);
+				return map_position_t(xx / 100, yy / 100);
 			}
 	};
 
@@ -204,15 +204,15 @@ namespace screeps {
 	// Stores context about a room, specific to each search
 	struct room_info_t {
 		uint8_t* terrain;
-		uint8_t (*cost_matrix)[50];
+		uint8_t (*cost_matrix)[100];
 		map_position_t pos;
-		static uint8_t cost_matrix0[2500];
+		static uint8_t cost_matrix0[21000];
 
 		room_info_t() = default;
 
 		room_info_t(uint8_t* terrain, uint8_t* cost_matrix, map_position_t pos) :
 			terrain(terrain),
-			cost_matrix((uint8_t(*)[50])(cost_matrix == NULL ? cost_matrix0 : cost_matrix)),
+			cost_matrix((uint8_t(*)[100])(cost_matrix == NULL ? cost_matrix0 : cost_matrix)),
 			pos(pos)
 			{
 		}
@@ -221,7 +221,7 @@ namespace screeps {
 			if (cost_matrix[xx][yy]) {
 				return cost_matrix[xx][yy];
 			}
-			unsigned int index = xx * 50 + yy;
+			unsigned int index = xx * 100 + yy;
 			return 0x03 & terrain[index / 4] >> (index % 4 * 2);
 		}
 	};
@@ -245,7 +245,7 @@ namespace screeps {
 			// Theoretical max number of open nodes is total node divided by 8. 1 node opens all its
 			// neighbors repeated perfectly over the whole graph. It's impossible to actually hit this
 			// limit with a regular pathfinder operation
-			std::array<index_t, 2500 * k_max_rooms / 8> heap;
+			std::array<index_t, 21000 * k_max_rooms / 8> heap;
 			size_t size_;
 
 		public:
@@ -333,9 +333,9 @@ namespace screeps {
 			size_t room_table_size = 0;
 			std::array<room_index_t, map_position_size> reverse_room_table;
 			std::unordered_set<map_position_t, map_position_t::hash_t> blocked_rooms;
-			std::array<pos_index_t, 2500 * k_max_rooms> parents;
-			open_closed_t<2500 * k_max_rooms> open_closed;
-			heap_t<pos_index_t, cost_t, 2500 * k_max_rooms> heap;
+			std::array<pos_index_t, 21000 * k_max_rooms> parents;
+			open_closed_t<21000 * k_max_rooms> open_closed;
+			heap_t<pos_index_t, cost_t, 21000 * k_max_rooms> heap;
 			std::vector<goal_t> goals;
 			cost_t look_table[4] = {obstacle, obstacle, obstacle, obstacle};
 			double heuristic_weight;
