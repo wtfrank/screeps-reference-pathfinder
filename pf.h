@@ -1,11 +1,13 @@
 // Author: Marcel Laverdet <https://github.com/laverdet>
-#include <nan.h>
 #include <array>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <unordered_set>
 #include <vector>
+#include <cstdint>
+#include <limits>
+#include <functional>
 
 namespace screeps {
 	typedef uint32_t cost_t; // maximum: longest chebyshev distance of whole map
@@ -31,11 +33,7 @@ namespace screeps {
 
 		map_position_t(uint8_t xx, uint8_t yy) : xx(xx), yy(yy) {}
 
-		map_position_t(v8::Local<v8::Value> pos) {
-			v8::Local<v8::Object> obj = Nan::To<v8::Object>(pos).ToLocalChecked();
-			xx = Nan::To<uint32_t>(Nan::Get(obj, Nan::New("xx").ToLocalChecked()).ToLocalChecked()).FromJust();
-			yy = Nan::To<uint32_t>(Nan::Get(obj, Nan::New("yy").ToLocalChecked()).ToLocalChecked()).FromJust();
-		}
+		map_position_t(const std::pair<uint8_t, uint8_t>& pos) : xx(pos.first), yy(pos.second) {}
 
 		bool operator== (map_position_t right) const {
 			return this->id == right.id;
@@ -73,12 +71,6 @@ namespace screeps {
 			world_position_t(uint32_t xx, uint32_t yy) : xx(xx), yy(yy) {}
 
 			explicit world_position_t(uint64_t id) : id(id) {}
-
-			world_position_t(v8::Local<v8::Value> pos) {
-				v8::Local<v8::Object> obj = Nan::To<v8::Object>(pos).ToLocalChecked();
-				xx = Nan::To<uint32_t>(Nan::Get(obj, Nan::New("xx").ToLocalChecked()).ToLocalChecked()).FromJust();
-				yy = Nan::To<uint32_t>(Nan::Get(obj, Nan::New("yy").ToLocalChecked()).ToLocalChecked()).FromJust();
-			}
 
 			static world_position_t null() {
 				return world_position_t(0);
@@ -124,6 +116,8 @@ namespace screeps {
 						return world_position_t(xx - 1, yy);
 					case TOP_LEFT:
 						return world_position_t(xx - 1, yy - 1);
+					default:
+						return world_position_t::null();
 				}
 			}
 
@@ -147,14 +141,12 @@ namespace screeps {
 					} else {
 						return LEFT;
 					}
-				} else {
-					if (dy > 0) {
-						return BOTTOM;
-					} else if (dy < 0) {
-						return TOP;
-					}
+				} else if (dy > 0) {
+					return BOTTOM;
+				} else if (dy < 0) {
+					return TOP;
 				}
-				return (direction_t)-1;
+				return TOP;
 			}
 
 			cost_t range_to(const world_position_t pos) const {
@@ -239,11 +231,8 @@ namespace screeps {
 	struct goal_t {
 		cost_t range;
 		world_position_t pos;
-		goal_t(v8::Local<v8::Value> goal) {
-			v8::Local<v8::Object> obj = Nan::To<v8::Object>(goal).ToLocalChecked();
-			range = Nan::To<uint32_t>(Nan::Get(obj, Nan::New("range").ToLocalChecked()).ToLocalChecked()).FromJust();
-			pos = world_position_t(Nan::Get(obj, Nan::New("pos").ToLocalChecked()).ToLocalChecked());
-		}
+		goal_t(cost_t range, world_position_t pos) : range(range), pos(pos) {}
+		goal_t(std::pair<cost_t, world_position_t> p) : range(p.first), pos(p.second) {}
 	};
 
 	//
@@ -352,8 +341,8 @@ namespace screeps {
 			double heuristic_weight;
 			room_index_t max_rooms;
 			bool flee;
-			v8::Local<v8::Value>* room_data_handles;
-			v8::Local<v8::Function>* room_callback;
+			std::function<uint8_t*(uint8_t, uint8_t)> room_callback;
+			uint8_t* room_data_handles[k_max_rooms];
 			bool _is_in_use = false;
 
 			static std::array<uint8_t*, map_position_size> terrain;
@@ -380,9 +369,17 @@ namespace screeps {
 			void jump_neighbor(world_position_t pos, pos_index_t index, world_position_t neighbor, cost_t g_cost, cost_t cost, cost_t n_cost);
 
 		public:
-			v8::Local<v8::Value> search(
-				v8::Local<v8::Value> origin_js, v8::Local<v8::Array> goals_js,
-				v8::Local<v8::Function> room_callback,
+			struct search_result_t {
+				std::vector<std::pair<uint32_t, uint32_t>> path;
+				uint32_t ops;
+				cost_t cost;
+				bool incomplete;
+			};
+
+			search_result_t search(
+				const world_position_t& origin,
+				std::vector<goal_t> goals,
+				std::function<uint8_t*(uint8_t, uint8_t)> room_callback,
 				cost_t plain_cost, cost_t swamp_cost,
 				uint8_t max_rooms, uint32_t max_ops, uint32_t max_cost,
 				bool flee,
@@ -393,6 +390,6 @@ namespace screeps {
 				return _is_in_use;
 			}
 
-			static void load_terrain(v8::Local<v8::Array> terrain);
+			static void load_terrain(const std::vector<std::pair<map_position_t, uint8_t*>>& terrain);
 	};
 };

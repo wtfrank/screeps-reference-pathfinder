@@ -30,32 +30,11 @@ constexpr bool is_near_border_pos(T val) {
 			}
 			uint8_t* terrain_ptr = terrain[map_pos.id];
 			if (terrain_ptr == nullptr) {
-				Nan::ThrowError("Could not load terrain data");
-				throw js_error();
+				throw std::runtime_error("Could not load terrain data");
 			}
 			uint8_t* cost_matrix = nullptr;
 			if (room_callback != nullptr) {
-				Nan::TryCatch try_catch;
-				v8::Local<v8::Value> argv[2];
-				argv[0] = Nan::New(map_pos.xx);
-				argv[1] = Nan::New(map_pos.yy);
-				Nan::MaybeLocal<v8::Value> ret = Nan::Call(*room_callback, v8::Local<v8::Object>::Cast(Nan::Undefined()), 2, argv);
-				if (try_catch.HasCaught()) {
-					try_catch.ReThrow();
-					throw js_error();
-				}
-				if (!ret.IsEmpty()) {
-					v8::Local<v8::Value> ret_local = ret.ToLocalChecked();
-					if (ret_local->IsBoolean() && ret_local->IsFalse()) {
-						blocked_rooms.insert(map_pos);
-						return 0;
-					}
-					room_data_handles[room_table_size] = ret_local;
-					Nan::TypedArrayContents<uint8_t> cost_matrix_js(room_data_handles[room_table_size]);
-					if (cost_matrix_js.length() == 2500) {
-						cost_matrix = *cost_matrix_js;
-					}
-				}
+				cost_matrix = room_callback(map_pos.xx, map_pos.yy);
 			}
 			room_table[room_table_size++] = room_info_t(terrain_ptr, cost_matrix, map_pos);
 			return reverse_room_table[map_pos.id] = room_table_size;
@@ -92,13 +71,11 @@ constexpr bool is_near_border_pos(T val) {
 			if (heap.priority(index) > f_cost) {
 				heap.update(index, f_cost);
 				parents[index] = parent_index;
-				// std::cout <<"~ " <<node <<": h(" <<h_cost <<") + " <<"g(" <<g_cost <<") = f(" <<f_cost <<")\n";
 			}
 		} else {
 			heap.insert(index, f_cost);
 			open_closed.open(index);
 			parents[index] = parent_index;
-			// std::cout <<"+ " <<node <<": h(" <<h_cost <<") + " <<"g(" <<g_cost <<") = f(" <<f_cost <<")\n";
 		}
 	}
 
@@ -182,7 +159,6 @@ constexpr bool is_near_border_pos(T val) {
 			// Calculate cost of this move
 			cost_t n_cost = look(neighbor);
 			if (n_cost == obstacle) {
-				// std::cout <<"# " <<neighbor <<"\n";
 				continue;
 			}
 			push_node(index, neighbor, g_cost + n_cost);
@@ -453,10 +429,10 @@ constexpr bool is_near_border_pos(T val) {
 		push_node(index, neighbor, g_cost);
 	}
 
-	v8::Local<v8::Value> path_finder_t::search(
-		v8::Local<v8::Value> origin_js,
-		v8::Local<v8::Array> goals_js,
-		v8::Local<v8::Function> room_callback,
+	screeps::path_finder_t::search_result_t path_finder_t::search(
+		const world_position_t& origin,
+		std::vector<goal_t> goals,
+		std::function<uint8_t*(uint8_t, uint8_t)> room_callback,
 		cost_t plain_cost,
 		cost_t swamp_cost,
 		uint8_t max_rooms,
@@ -476,19 +452,9 @@ constexpr bool is_near_border_pos(T val) {
 		open_closed.clear();
 		heap.clear();
 
-		// Construct goal objects
-		for (uint32_t ii = 0; ii < goals_js->Length(); ++ii) {
-			goals.push_back(goal_t(Nan::Get(goals_js, ii).ToLocalChecked()));
-		}
-
-		// These aren't ever accessed, this is just a place to put the handles for the CostMatrix data
-		// so it doesn't get gc'd
-		v8::Local<v8::Value> room_data_handle_holder[k_max_rooms];
-		room_data_handles = room_data_handle_holder;
-		if (room_callback->IsUndefined()) {
+		this->room_callback = room_callback;
+		if (room_callback == nullptr) {
 			this->room_callback = nullptr;
-		} else {
-			this->room_callback = &room_callback;
 		}
 
 		// Other initialization
@@ -498,29 +464,22 @@ constexpr bool is_near_border_pos(T val) {
 		this->heuristic_weight = heuristic_weight;
 		uint32_t ops_remaining = max_ops;
 		this->flee = flee;
-		world_position_t origin(origin_js);
+
+		_is_in_use = true;
 		cost_t min_node_h_cost = std::numeric_limits<cost_t>::max();
 		cost_t min_node_g_cost = std::numeric_limits<cost_t>::max();
 		pos_index_t min_node = 0;
 
-		// Special case for searching to same node, otherwise it searches everywhere because origin node
-		// is closed
-		if (heuristic(origin) == 0) {
-			return Nan::Undefined();
-		}
-
-		_is_in_use = true;
 		try {
 			// Prime data for `index_from_pos`
 			if (room_index_from_pos(origin.map_position()) == 0) {
-				// Initial room is inaccessible
 				_is_in_use = false;
-				return Nan::New(-1);
+				return search_result_t{};
 			}
 
 			// Initial A* iteration
-			min_node = index_from_pos(origin);
-			astar(min_node, origin, 0);
+			pos_index_t current_min_node = index_from_pos(origin);
+			astar(current_min_node, origin, 0);
 
 			// Loop until we have a solution
 			while (!heap.empty() && ops_remaining > 0) {
@@ -533,7 +492,6 @@ constexpr bool is_near_border_pos(T val) {
 				world_position_t pos = pos_from_index(current.first);
 				cost_t h_cost = heuristic(pos);
 				cost_t g_cost = current.second - cost_t(h_cost * heuristic_weight);
-				// std::cout <<"\n* " <<pos <<": h(" << h_cost <<") + " <<"g(" <<g_cost <<") = f(" <<current.second <<")\n";
 
 				// Reached destination?
 				if (h_cost == 0) {
@@ -553,29 +511,19 @@ constexpr bool is_near_border_pos(T val) {
 				// Add next neighbors to heap
 				jps(current.first, pos, g_cost);
 				--ops_remaining;
-
-				// Check termination
-				if (v8::Isolate::GetCurrent()->IsExecutionTerminating()) {
-					_is_in_use = false;
-					return Nan::Undefined();
-				}
 			}
-		} catch (js_error) {
-			// Whoever threw the `js_error` should set the exception for v8
+		} catch (std::runtime_error&) {
 			_is_in_use = false;
-			return Nan::Undefined();
+			return search_result_t{};
 		}
 
 		// Reconstruct path from A* graph
-		v8::Local<v8::Array> path = Nan::New<v8::Array>(0);
+		screeps::path_finder_t::search_result_t result{};
 		pos_index_t index = min_node;
 		world_position_t pos = pos_from_index(index);
 		uint32_t ii = 0;
 		while (pos != origin) {
-			v8::Local<v8::Array> tmp = Nan::New<v8::Array>(2);
-			Nan::Set(tmp, 0, Nan::New(pos.xx));
-			Nan::Set(tmp, 1, Nan::New(pos.yy));
-			Nan::Set(path, ii, tmp);
+			result.path.emplace_back(pos.xx, pos.yy);
 			++ii;
 			index = parents[index];
 			world_position_t next = pos_from_index(index);
@@ -583,31 +531,22 @@ constexpr bool is_near_border_pos(T val) {
 				world_position_t::direction_t dir = pos.direction_to(next);
 				do {
 					pos = pos.position_in_direction(dir);
-					v8::Local<v8::Array> tmp = Nan::New<v8::Array>(2);
-					Nan::Set(tmp, 0, Nan::New(pos.xx));
-					Nan::Set(tmp, 1, Nan::New(pos.yy));
-					Nan::Set(path, ii, tmp);
+					result.path.emplace_back(pos.xx, pos.yy);
 					++ii;
 				} while (pos.range_to(next) > 1);
 			}
 			pos = next;
 		}
-		v8::Local<v8::Object> ret = Nan::New<v8::Object>();
-		Nan::Set(ret, Nan::New("path").ToLocalChecked(), path);
-		Nan::Set(ret, Nan::New("ops").ToLocalChecked(), Nan::New(max_ops - ops_remaining));
-		Nan::Set(ret, Nan::New("cost").ToLocalChecked(), Nan::New(min_node_g_cost));
-		Nan::Set(ret, Nan::New("incomplete").ToLocalChecked(), Nan::New<v8::Boolean>(min_node_h_cost != 0));
+		result.ops = max_ops - ops_remaining;
+		result.cost = min_node_g_cost;
+		result.incomplete = min_node_h_cost != 0;
 		_is_in_use = false;
-		return ret;
+		return result;
 	}
 
 	// Loads static terrain data into module upfront
-	void path_finder_t::load_terrain(v8::Local<v8::Array> terrain) {
-		uint8_t* data = new uint8_t[terrain->Length() * 625];
-		for (uint32_t ii = 0; ii < terrain->Length(); ++ii) {
-			v8::Local<v8::Object> terrain_info = Nan::To<v8::Object>(Nan::Get(terrain, ii).ToLocalChecked()).ToLocalChecked();
-			map_position_t pos = Nan::Get(terrain_info, Nan::New("room").ToLocalChecked()).ToLocalChecked();
-			memcpy(data + ii * 625, *Nan::TypedArrayContents<uint8_t>(Nan::Get(terrain_info, Nan::New("bits").ToLocalChecked()).ToLocalChecked()), 625);
-			path_finder_t::terrain[pos.id] = data + ii * 625;
+	void path_finder_t::load_terrain(const std::vector<std::pair<map_position_t, uint8_t*>>& terrain) {
+		for (const auto& t : terrain) {
+			path_finder_t::terrain[t.first.id] = t.second;
 		}
 	}
