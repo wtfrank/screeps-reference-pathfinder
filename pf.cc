@@ -459,7 +459,7 @@ uint8_t room_info_t::cost_matrix0[21000] = {0};
 		}
 		room_table_size = 0;
 		blocked_rooms.clear();
-		goals.clear();
+		this->goals = std::move(goals);
 		open_closed.clear();
 		heap.clear();
 
