@@ -16,20 +16,16 @@ struct CSearchResult {
     uint8_t path_y[1000];
 };
 
-static uint8_t g_bitpacked_terrain[2500];
+static uint8_t g_terrain_bytes[10000];
 static std::unique_ptr<screeps::path_finder_t> g_pf;
 
 void load_terrain_c(const uint8_t* terrain_10000) {
     if (!g_pf) {
         g_pf = std::make_unique<screeps::path_finder_t>();
     }
-    std::memset(g_bitpacked_terrain, 0, 2500);
-    for (size_t i = 0; i < 10000; ++i) {
-        uint8_t val = terrain_10000[i] & 0x03;
-        g_bitpacked_terrain[i / 4] |= (val << ((i % 4) * 2));
-    }
+    std::memcpy(g_terrain_bytes, terrain_10000, 10000);
     screeps::map_position_t room_pos(0, 0);
-    screeps::path_finder_t::load_terrain({ {room_pos, g_bitpacked_terrain} });
+    screeps::path_finder_t::load_terrain({ {room_pos, g_terrain_bytes} });
 }
 
 CSearchResult search_path_c(

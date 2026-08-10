@@ -6,8 +6,15 @@ Compares official JS server log reference output against standalone compiled C++
 
 import ctypes
 import json
+import resource
 import sys
 from pathlib import Path
+
+# Increase stack size to prevent stack overflow from large C++ structures/recursion
+try:
+    resource.setrlimit(resource.RLIMIT_STACK, (131072000, resource.RLIM_INFINITY))
+except Exception:
+    pass
 
 
 class CSearchResult(ctypes.Structure):

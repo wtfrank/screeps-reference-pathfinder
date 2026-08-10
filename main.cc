@@ -65,16 +65,32 @@ int main(int argc, char** argv) {
     screeps::map_position_t room_pos(0, 0);
     screeps::path_finder_t::load_terrain({ {room_pos, terrain_bytes.data()} });
 
-    screeps::path_finder_t pf;
+    auto pf = std::make_unique<screeps::path_finder_t>();
 
     std::cout << "Successfully loaded terrain. Parsing path_tests..." << std::endl;
 
     // Parse [PATH_TEST] queries using string search
     std::vector<PathTestRecord> tests;
-    size_t test_pos = 0;
-    while ((test_pos = content.find("\"ox\":", test_pos)) != std::string::npos) {
-        size_t block_start = content.rfind("{", test_pos);
-        size_t block_end = content.find("}", test_pos);
+    size_t test_pos = content.find("\"path_tests\":");
+    if (test_pos == std::string::npos) test_pos = 0;
+
+    while ((test_pos = content.find("\"origin\":", test_pos)) != std::string::npos) {
+        size_t block_start = content.rfind("{\n      \"tick\"", test_pos);
+        if (block_start == std::string::npos) block_start = content.rfind("{", test_pos);
+        
+        // Find matching closing brace for this test block
+        size_t block_end = test_pos;
+        int depth = 0;
+        for (size_t p = block_start; p < content.length(); ++p) {
+            if (content[p] == '{') depth++;
+            else if (content[p] == '}') {
+                depth--;
+                if (depth == 0) {
+                    block_end = p;
+                    break;
+                }
+            }
+        }
         if (block_start == std::string::npos || block_end == std::string::npos) break;
 
         std::string block = content.substr(block_start, block_end - block_start + 1);
@@ -91,15 +107,28 @@ int main(int argc, char** argv) {
             return std::stol(s);
         };
 
-        r.ox = (uint8_t)get_val("ox");
-        r.oy = (uint8_t)get_val("oy");
-        r.gx = (uint8_t)get_val("gx");
-        r.gy = (uint8_t)get_val("gy");
+        auto get_nested_val = [&](const std::string& parent, const std::string& key) -> long {
+            size_t p = block.find("\"" + parent + "\":");
+            if (p == std::string::npos) return 0;
+            size_t k = block.find("\"" + key + "\":", p);
+            if (k == std::string::npos) return 0;
+            size_t v_start = block.find_first_of("0123456789truefalse", k + key.length() + 3);
+            size_t v_end = block.find_first_of(",}\n", v_start);
+            std::string s = block.substr(v_start, v_end - v_start);
+            if (s == "true") return 1;
+            if (s == "false") return 0;
+            return std::stol(s);
+        };
+
+        r.ox = (uint8_t)get_nested_val("origin", "x");
+        r.oy = (uint8_t)get_nested_val("origin", "y");
+        r.gx = (uint8_t)get_nested_val("goal", "x");
+        r.gy = (uint8_t)get_nested_val("goal", "y");
         r.range = (uint8_t)get_val("range");
         r.flee = (bool)get_val("flee");
         r.ops = (uint32_t)get_val("ops");
         r.cost = (uint32_t)get_val("cost");
-        r.incomplete = (bool)get_val("inc");
+        r.incomplete = (bool)get_val("incomplete");
 
         // Parse path array length
         size_t path_k = block.find("\"path\":");
@@ -133,7 +162,7 @@ int main(int argc, char** argv) {
         screeps::world_position_t goal_pos(t.gx, t.gy);
         screeps::goal_t goal(t.range, goal_pos);
 
-        auto res = pf.search(origin, {goal}, nullptr, 2, 10, 1, 50000, 0xffffffff, t.flee, 1.2);
+        auto res = pf->search(origin, {goal}, nullptr, 2, 10, 1, 50000, 0xffffffff, t.flee, 1.2);
 
         uint32_t exp_cost = (t.incomplete && t.cost == 4294967295) ? 0 : t.cost;
         uint32_t res_cost = (res.incomplete && res.cost == 4294967295) ? 0 : res.cost;
