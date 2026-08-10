@@ -153,8 +153,16 @@ int main(int argc, char** argv) {
 
     uint32_t matched = 0;
     uint32_t diffs = 0;
-    uint32_t cost_diffs = 0;
-    uint32_t inc_diffs = 0;
+    struct CostDiffRecord {
+        size_t idx;
+        uint8_t ox, oy, gx, gy, range;
+        bool flee;
+        uint32_t ref_cost, cpp_cost;
+    };
+    std::vector<CostDiffRecord> cost_mismatches;
+    uint32_t inc_mismatches = 0;
+    uint32_t len_mismatches = 0;
+    uint32_t waypoint_diffs = 0;
 
     for (size_t i = 0; i < tests.size(); ++i) {
         const auto& t = tests[i];
@@ -164,31 +172,55 @@ int main(int argc, char** argv) {
 
         auto res = pf->search(origin, {goal}, nullptr, 2, 10, 1, 50000, 0xffffffff, t.flee, 1.2);
 
-        uint32_t exp_cost = (t.incomplete && t.cost == 4294967295) ? 0 : t.cost;
-        uint32_t res_cost = (res.incomplete && res.cost == 4294967295) ? 0 : res.cost;
+        bool cpp_inc = res.incomplete;
+        uint32_t cpp_cost = res.cost;
 
-        if (res.incomplete == t.incomplete && res_cost == exp_cost && res.path.size() == t.path.size()) {
+        uint32_t exp_ref_cost = (t.incomplete && t.cost == 4294967295) ? 0 : t.cost;
+        uint32_t exp_cpp_cost = (cpp_inc && cpp_cost == 4294967295) ? 0 : cpp_cost;
+
+        bool path_matches = (res.path.size() == t.path.size());
+        if (path_matches) {
+            for (size_t k = 0; k < res.path.size(); ++k) {
+                if (res.path[k].first != t.path[k].first || res.path[k].second != t.path[k].second) {
+                    path_matches = false;
+                    break;
+                }
+            }
+        }
+
+        if (path_matches && cpp_inc == t.incomplete && exp_cpp_cost == exp_ref_cost) {
             matched++;
         } else {
             diffs++;
-            if (res.incomplete != t.incomplete) inc_diffs++;
-            if (res_cost != exp_cost) {
-                cost_diffs++;
-                if (cost_diffs <= 10) {
-                    std::cout << "C++ COST DIFF #" << cost_diffs << ": ox=" << (int)t.ox << " oy=" << (int)t.oy
-                              << " gx=" << (int)t.gx << " gy=" << (int)t.gy << " range=" << (int)t.range
-                              << " flee=" << t.flee << " | REF cost=" << exp_cost << " inc=" << t.incomplete
-                              << " | CPP cost=" << res_cost << " inc=" << res.incomplete << std::endl;
-                }
+            if (cpp_inc != t.incomplete) {
+                inc_mismatches++;
+            } else if (exp_cpp_cost != exp_ref_cost) {
+                cost_mismatches.push_back({i, t.ox, t.oy, t.gx, t.gy, t.range, t.flee, exp_ref_cost, exp_cpp_cost});
+            } else if (res.path.size() != t.path.size()) {
+                len_mismatches++;
+            } else {
+                waypoint_diffs++;
             }
         }
     }
 
-    std::cout << "\n=== C++ pf.cc BENCHMARK RESULTS (Out of " << tests.size() << " Queries) ===" << std::endl;
+    std::cout << "\n=== STANDALONE C++ pf.cc vs OFFICIAL SERVER LOGS (Out of " << tests.size() << " Queries) ===" << std::endl;
     std::cout << "  100% Exact Match           : " << matched << " (" << (matched * 100.0 / tests.size()) << "%)" << std::endl;
-    std::cout << "  Incomplete Mismatches      : " << inc_diffs << std::endl;
-    std::cout << "  Cost Mismatches            : " << cost_diffs << std::endl;
-    std::cout << "  Total Diffs                : " << diffs << std::endl;
+    std::cout << "  Incomplete Flag Mismatches : " << inc_mismatches << std::endl;
+    std::cout << "  Cost Mismatches            : " << cost_mismatches.size() << std::endl;
+    std::cout << "  Path Length Mismatches     : " << len_mismatches << std::endl;
+    std::cout << "  Same Cost/Len Waypoint Diff: " << waypoint_diffs << std::endl;
+
+    if (!cost_mismatches.empty()) {
+        std::cout << "\n--- C++ pf.cc Cost Mismatches ---" << std::endl;
+        size_t limit = std::min<size_t>(15, cost_mismatches.size());
+        for (size_t k = 0; k < limit; ++k) {
+            const auto& m = cost_mismatches[k];
+            std::cout << "  Query #" << m.idx << ": origin=(" << (int)m.ox << "," << (int)m.oy
+                      << ") goal=(" << (int)m.gx << "," << (int)m.gy << ") range=" << (int)m.range
+                      << " flee=" << m.flee << " | REF cost=" << m.ref_cost << " | CPP cost=" << m.cpp_cost << std::endl;
+        }
+    }
 
     return 0;
 }
