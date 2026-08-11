@@ -51,14 +51,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Prepare 10,000 terrain bytes
-    std::vector<uint8_t> terrain_bytes(10000);
-    for (size_t i = 0; i < 10000; ++i) {
-        char c = terrain_str[i];
-        if (c == '1') terrain_bytes[i] = 1;
-        else if (c == '2') terrain_bytes[i] = 2;
-        else if (c == '3') terrain_bytes[i] = 3;
-        else terrain_bytes[i] = 0;
+    // Prepare 2,500 packed terrain bytes (2 bits per tile).
+    // Terrain string is row-major: str[y*100+x] = terrain at (x,y).
+    // pf.h look() reads column-major: packed[x*100+y] = terrain at (x,y).
+    // Transpose here so the two align.
+    std::vector<uint8_t> terrain_bytes(2500, 0);
+    for (int y = 0; y < 100; ++y) {
+        for (int x = 0; x < 100; ++x) {
+            char c = terrain_str[y * 100 + x];
+            uint8_t val = (c == '1') ? 1 : ((c == '2') ? 2 : ((c == '3') ? 3 : 0));
+            int col_idx = x * 100 + y;
+            terrain_bytes[col_idx / 4] |= (val << ((col_idx % 4) * 2));
+        }
     }
 
     // Load terrain into C++ pathfinder
@@ -75,26 +79,27 @@ int main(int argc, char** argv) {
     if (test_pos == std::string::npos) test_pos = 0;
 
     while ((test_pos = content.find("\"origin\":", test_pos)) != std::string::npos) {
-        size_t block_start = content.rfind("{\n      \"tick\"", test_pos);
-        if (block_start == std::string::npos) block_start = content.rfind("{", test_pos);
-        
+        // Find block start by looking backward for "tick" (always first key in each record),
+        // then the { immediately before it. This avoids landing inside {"x":...} path waypoints
+        // from the previous record when the whitespace-specific pattern doesn't match.
+        size_t tick_pos = content.rfind("\"tick\"", test_pos);
+        if (tick_pos == std::string::npos) break;
+        size_t block_start = content.rfind("{", tick_pos);
+        if (block_start == std::string::npos) break;
+
         // Find matching closing brace for this test block
-        size_t block_end = test_pos;
+        size_t block_end = block_start;
         int depth = 0;
         for (size_t p = block_start; p < content.length(); ++p) {
             if (content[p] == '{') depth++;
             else if (content[p] == '}') {
                 depth--;
-                if (depth == 0) {
-                    block_end = p;
-                    break;
-                }
+                if (depth == 0) { block_end = p; break; }
             }
         }
-        if (block_start == std::string::npos || block_end == std::string::npos) break;
 
         std::string block = content.substr(block_start, block_end - block_start + 1);
-        
+
         PathTestRecord r{};
         auto get_val = [&](const std::string& key) -> long {
             size_t k = block.find("\"" + key + "\":");
@@ -112,12 +117,9 @@ int main(int argc, char** argv) {
             if (p == std::string::npos) return 0;
             size_t k = block.find("\"" + key + "\":", p);
             if (k == std::string::npos) return 0;
-            size_t v_start = block.find_first_of("0123456789truefalse", k + key.length() + 3);
+            size_t v_start = block.find_first_of("0123456789", k + key.length() + 3);
             size_t v_end = block.find_first_of(",}\n", v_start);
-            std::string s = block.substr(v_start, v_end - v_start);
-            if (s == "true") return 1;
-            if (s == "false") return 0;
-            return std::stol(s);
+            return std::stol(block.substr(v_start, v_end - v_start));
         };
 
         r.ox = (uint8_t)get_nested_val("origin", "x");
@@ -130,24 +132,42 @@ int main(int argc, char** argv) {
         r.cost = (uint32_t)get_val("cost");
         r.incomplete = (bool)get_val("incomplete");
 
-        // Parse path array length
+        // Parse path array: find "[" after "path":, then scan to matching "]",
+        // collecting {x,y} pairs along the way.
         size_t path_k = block.find("\"path\":");
         if (path_k != std::string::npos) {
-            size_t p_start = block.find("[", path_k);
-            size_t p_end = block.find("]", p_start);
-            std::string p_str = block.substr(p_start, p_end - p_start + 1);
-            size_t count = 0;
-            size_t pos = 0;
-            while ((pos = p_str.find("{\"x\":", pos)) != std::string::npos) {
-                count++;
-                pos++;
+            size_t arr_start = block.find("[", path_k);
+            if (arr_start != std::string::npos) {
+                // Find matching "]" using bracket depth
+                size_t arr_end = arr_start;
+                int adepth = 0;
+                for (size_t p = arr_start; p < block.size(); ++p) {
+                    if (block[p] == '[') adepth++;
+                    else if (block[p] == ']') { if (--adepth == 0) { arr_end = p; break; } }
+                }
+                // Parse each {"x":N,"y":M} waypoint
+                size_t scan = arr_start;
+                while (scan < arr_end) {
+                    size_t xk = block.find("\"x\":", scan);
+                    if (xk == std::string::npos || xk >= arr_end) break;
+                    size_t xv = block.find_first_of("0123456789", xk + 4);
+                    size_t xve = block.find_first_of(",}", xv);
+                    size_t yk = block.find("\"y\":", xk);
+                    if (yk == std::string::npos || yk >= arr_end) break;
+                    size_t yv = block.find_first_of("0123456789", yk + 4);
+                    size_t yve = block.find_first_of(",}", yv);
+                    uint8_t px = (uint8_t)std::stol(block.substr(xv, xve - xv));
+                    uint8_t py = (uint8_t)std::stol(block.substr(yv, yve - yv));
+                    r.path.emplace_back(px, py);
+                    scan = yve + 1;
+                }
             }
-            r.path.resize(count);
         }
 
         tests.push_back(r);
         test_pos = block_end + 1;
     }
+
 
     std::cout << "Parsed " << tests.size() << " benchmark queries. Running C++ pf.cc..." << std::endl;
 
@@ -170,7 +190,7 @@ int main(int argc, char** argv) {
         screeps::world_position_t goal_pos(t.gx, t.gy);
         screeps::goal_t goal(t.range, goal_pos);
 
-        auto res = pf->search(origin, {goal}, nullptr, 2, 10, 1, 50000, 0xffffffff, t.flee, 1.2);
+        auto res = pf->search(origin, {goal}, nullptr, 2, 10, 1, 10000, 0xffffffff, t.flee, 1.2);
 
         bool cpp_inc = res.incomplete;
         uint32_t cpp_cost = res.cost;
@@ -198,6 +218,12 @@ int main(int argc, char** argv) {
                 cost_mismatches.push_back({i, t.ox, t.oy, t.gx, t.gy, t.range, t.flee, exp_ref_cost, exp_cpp_cost});
             } else if (res.path.size() != t.path.size()) {
                 len_mismatches++;
+                if (len_mismatches <= 8) {
+                    std::cout << "  LenMismatch #" << i << ": origin=(" << (int)t.ox << "," << (int)t.oy
+                              << ") goal=(" << (int)t.gx << "," << (int)t.gy << ") range=" << (int)t.range
+                              << " flee=" << t.flee << " cost=" << exp_ref_cost
+                              << " | REF path=" << t.path.size() << " CPP path=" << res.path.size() << std::endl;
+                }
             } else {
                 waypoint_diffs++;
             }

@@ -49,13 +49,17 @@ uint8_t room_info_t::cost_matrix0[21000] = {0};
 		if (room_index == 0) {
 			throw std::runtime_error("Invalid invocation of index_from_pos");
 		}
-		return pos_index_t(room_index - 1) * 100 * 100 + pos.xx % 100 * 100 + pos.yy % 100;
+		// +1 keeps index 0 as the null sentinel, matching the original Screeps World
+		// assumption that pos_index 0 is unreachable. In Arena, room (0,0) exists so
+		// tile (0,0) would otherwise collide with the sentinel.
+		return pos_index_t(room_index - 1) * 100 * 100 + pos.xx % 100 * 100 + pos.yy % 100 + 1;
 	}
 
 	world_position_t path_finder_t::pos_from_index(pos_index_t index) const {
-		room_index_t room_index = index / (100 * 100);
+		unsigned int adjusted = index - 1;  // undo the +1 offset from index_from_pos
+		room_index_t room_index = adjusted / (100 * 100);
 		const room_info_t& terrain = room_table[room_index];
-		unsigned int coord = index - room_index * 100 * 100;
+		unsigned int coord = adjusted - room_index * 100 * 100;
 		return world_position_t(coord / 100 + terrain.pos.xx * 100, coord % 100 + terrain.pos.yy * 100);
 	}
 
@@ -72,11 +76,13 @@ uint8_t room_info_t::cost_matrix0[21000] = {0};
 			if (heap.priority(index) > f_cost) {
 				heap.update(index, f_cost);
 				parents[index] = parent_index;
+				// std::cout <<"~ " <<node <<": h(" <<h_cost <<") + " <<"g(" <<g_cost <<") = f(" <<f_cost <<")\n";
 			}
 		} else {
 			heap.insert(index, f_cost);
 			open_closed.open(index);
 			parents[index] = parent_index;
+			// std::cout <<"+ " <<node <<": h(" <<h_cost <<") + " <<"g(" <<g_cost <<") = f(" <<f_cost <<")\n";
 		}
 	}
 
@@ -160,6 +166,7 @@ uint8_t room_info_t::cost_matrix0[21000] = {0};
 			// Calculate cost of this move
 			cost_t n_cost = look(neighbor);
 			if (n_cost == obstacle) {
+				// std::cout <<"# " <<neighbor <<"\n";
 				continue;
 			}
 			push_node(index, neighbor, g_cost + n_cost);
@@ -489,8 +496,8 @@ uint8_t room_info_t::cost_matrix0[21000] = {0};
 			}
 
 			// Initial A* iteration
-			pos_index_t current_min_node = index_from_pos(origin);
-			astar(current_min_node, origin, 0);
+			min_node = index_from_pos(origin);
+			astar(min_node, origin, 0);
 
 			// Loop until we have a solution
 			while (!heap.empty() && ops_remaining > 0) {
@@ -503,6 +510,7 @@ uint8_t room_info_t::cost_matrix0[21000] = {0};
 				world_position_t pos = pos_from_index(current.first);
 				cost_t h_cost = heuristic(pos);
 				cost_t g_cost = current.second - cost_t(h_cost * heuristic_weight);
+				// std::cout <<"\n* " <<pos <<": h(" << h_cost <<") + " <<"g(" <<g_cost <<") = f(" <<current.second <<")\n";
 
 				// Reached destination?
 				if (h_cost == 0) {
@@ -533,6 +541,8 @@ uint8_t room_info_t::cost_matrix0[21000] = {0};
 		pos_index_t index = min_node;
 		world_position_t pos = pos_from_index(index);
 		uint32_t ii = 0;
+		if (min_node == 0)
+			std::cout << "fuck" << std::endl;
 		while (pos != origin) {
 			result.path.emplace_back(pos.xx, pos.yy);
 			++ii;

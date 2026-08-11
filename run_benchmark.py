@@ -45,8 +45,11 @@ def main():
         ctypes.c_uint8,  # gx
         ctypes.c_uint8,  # gy
         ctypes.c_uint8,  # range
+        ctypes.c_uint32, # plain_cost
+        ctypes.c_uint32, # swamp_cost
         ctypes.c_uint32, # flee
         ctypes.c_uint32, # max_ops
+        ctypes.c_uint32, # max_cost
         ctypes.c_double  # heuristic_weight
     ]
     lib.search_path_c.restype = CSearchResult
@@ -90,7 +93,7 @@ def main():
         ref_inc = test["incomplete"]
         ref_path = test["path"]
 
-        res = lib.search_path_c(ox, oy, gx, gy, r, flee, 50000, 1.2)
+        res = lib.search_path_c(ox, oy, gx, gy, r, 0, 0, flee, 10000, 0, 0.0)
 
         cpp_inc = (res.incomplete != 0)
         cpp_cost = res.cost
