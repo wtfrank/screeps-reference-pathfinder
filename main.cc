@@ -9,7 +9,7 @@
 #include <memory>
 
 int main(int argc, char** argv) {
-    std::string json_path = "../arena_api_mock/mock-screeps-arena/tests/data/path_tests_ssb5.json";
+    std::string json_path = "./testdata/path_tests_ssb5.json";
     if (argc > 1) {
         json_path = argv[1];
     }
