@@ -483,6 +483,13 @@ uint8_t room_info_t::cost_matrix0[21000] = {0};
 		uint32_t ops_remaining = max_ops;
 		this->flee = flee;
 
+		// Special case for searching to same node, otherwise it searches everywhere because origin node
+		// is closed. (Present in upstream screeps/driver pf.cc; lost when the v8 bindings were stripped.)
+		// Real engine returns {path: [], ops: 0, cost: 0, incomplete: false}.
+		if (heuristic(origin) == 0) {
+			return search_result_t{};
+		}
+
 		_is_in_use = true;
 		cost_t min_node_h_cost = std::numeric_limits<cost_t>::max();
 		cost_t min_node_g_cost = std::numeric_limits<cost_t>::max();
