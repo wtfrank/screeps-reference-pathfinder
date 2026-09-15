@@ -55,9 +55,7 @@ def main():
     lib.search_path_c.restype = CSearchResult
 
     # Find benchmark JSON
-    json_path = Path(__file__).parent.parent / "arena_api_mock" / "mock-screeps-arena" / "tests" / "data" / "path_tests_ssb5.json"
-    if not json_path.exists():
-        json_path = Path(__file__).parent.parent / "screeps_arena_sim" / "path_tests_ssb5-debug-paths.json"
+    json_path = Path(__file__).parent / "testdata" / "path_tests_ssb5.json"
 
     print(f"Loading benchmark JSON: {json_path}")
     data = json.load(open(json_path))
