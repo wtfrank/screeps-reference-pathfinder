@@ -8,6 +8,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <algorithm>
 
 int main(int argc, char** argv) {
     std::string json_path = "./testdata/path_tests_ssb5.json";
@@ -78,6 +79,7 @@ int main(int argc, char** argv) {
         screeps::goal_t goal(t.range, goal_pos);
 
         auto res = pf->search(origin, {goal}, nullptr, 2, 10, 1, 10000, 0xffffffff, t.flee, 1.2);
+        std::reverse(res.path.begin(), res.path.end());
 
         bool cpp_inc = res.incomplete;
         uint32_t cpp_cost = res.cost;
