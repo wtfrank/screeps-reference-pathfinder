@@ -128,6 +128,7 @@ def main():
 
     print(f"\n=== STANDALONE C++ pf.cc vs OFFICIAL SERVER LOGS (Out of {len(path_tests)} Queries) ===", flush=True)
     print(f"  100% Exact Match           : {matched} ({matched / len(path_tests) * 100.0:.1f}%)", flush=True)
+    print(f"  Total Differences          : {diffs}", flush=True)
     print(f"  Incomplete Flag Mismatches : {len(inc_mismatches)}", flush=True)
     print(f"  Cost Mismatches            : {len(cost_mismatches)}", flush=True)
     print(f"  Path Length Mismatches     : {len(len_mismatches)}", flush=True)

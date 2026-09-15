@@ -2,6 +2,7 @@
 #include "pf.h"
 #include "bench_json.h"
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -117,7 +118,8 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "\n=== STANDALONE C++ pf.cc vs OFFICIAL SERVER LOGS (Out of " << tests.size() << " Queries) ===" << std::endl;
-    std::cout << "  100% Exact Match           : " << matched << " (" << (matched * 100.0 / tests.size()) << "%)" << std::endl;
+    std::cout << "  100% Exact Match           : " << matched << " (" << std::fixed << std::setprecision(1) << (matched * 100.0 / tests.size()) << "%)" << std::endl;
+    std::cout << "  Total Differences          : " << diffs << std::endl;
     std::cout << "  Incomplete Flag Mismatches : " << inc_mismatches << std::endl;
     std::cout << "  Cost Mismatches            : " << cost_mismatches.size() << std::endl;
     std::cout << "  Path Length Mismatches     : " << len_mismatches << std::endl;
